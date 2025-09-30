@@ -1,3 +1,4 @@
+import OpenAI from "openai";
 import { getBaseClient } from "../utils/baseClient";
 
 const getCredentials = (key: string) => {
@@ -8,6 +9,11 @@ const getCredentials = (key: string) => {
   return {apiKey: value};
 };
 
+const client = new OpenAI({
+  apiKey: getCredentials("OPENAI_API_KEY").apiKey,
+});
+
+export const openAIClient = client;
 
 export const openai = (
   { apiKey } = getCredentials("OPENAI_API_KEY")
