@@ -1,0 +1,45 @@
+{
+    "name": "fyxer-product-hiring-assessment",
+    "version": "1.0.0",
+    "description": "Fyxer Product Hiring Assessment",
+    "main": "index.ts",
+    "type": "module",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "dev": "tsx src/index.ts",
+        "watch": "tsx watch src/index.ts",
+        "start": "tsx src/index.ts"
+    },
+    "engines": {
+        "node": "22"
+    },
+    "author": "Fyxer AI",
+    "license": "ISC",
+    "dependencies": {
+        "@typescript-eslint/eslint-plugin": "^8.38.0",
+        "@typescript-eslint/parser": "^8.38.0",
+        "axios": "^1.8.2",
+        "bluebird": "^3.7.2",
+        "date-fns": "^4.1.0",
+        "date-fns-tz": "^3.2.0",
+        "dotenv": "^16.4.5",
+        "eslint": "^9.22.0",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-import": "^2.31.0",
+        "eslint-plugin-prettier": "^5.5.3",
+        "eslint-plugin-react-hooks": "^5.2.0",
+        "eslint-plugin-react-refresh": "^0.4.19",
+        "eslint-plugin-simple-import-sort": "^12.1.1",
+        "globals": "^15.14.0",
+        "node-fetch": "^3.3.1",
+        "openai": "^5.8.2",
+        "prettier": "^3.6.2"
+    },
+    "devDependencies": {
+        "@types/bluebird": "^3.5.42",
+        "@types/node": "^20.10.0",
+        "ts-node": "^10.9.2",
+        "tsx": "^4.20.6",
+        "typescript": "^5.9.2"
+    }
+}
