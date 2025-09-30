@@ -1,6 +1,5 @@
 import { CalendarEvent, TimeInterval } from "../../types/CalendarEvent";
 import { EmailMessage } from "../../types/EmailMessage";
-import OpenAI from "openai";
 import { getTimeIntervalsUserIsBusy } from "./getTimeIntervalsUserIsBusy";
 import { openAIClient } from "../../clients/openai";
 
@@ -49,7 +48,7 @@ const suggestMeetingSlotsForMeetingProposal = async ({
   );
 
   // TODO: Consider using LLM only to parse email for specific times mentioned, e.g., "next Tuesday at 3pm" or "Thursday afternoon"
-  // and then use that to filter the busy slots, rather than asking LLM to suggest times entirely. For today though, this is less complicated and faster.
+  // and then use that to filter the busy slots, rather than asking LLM to suggest times entirely. For today though, this is less complicated and faster; although more prone to errors.
 
 
   const prompt = `
@@ -57,6 +56,8 @@ const suggestMeetingSlotsForMeetingProposal = async ({
 
   Subject: ${emailMessage.subject}
   Body: ${emailMessage.fullBody}
+
+  The email was sent at ${emailMessage.sentAt.toISOString()}. Use the above information as time preferences for the meeting.
 
   The user's existing meeting slots are as follows: Do not schedule during this time.
   ${JSON.stringify(userBusySlots)}
