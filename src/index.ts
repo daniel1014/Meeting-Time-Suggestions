@@ -319,37 +319,37 @@ const determineSearchRange = (proposal: MeetingProposal): { start: Date; end: Da
   let searchStart = addMinutes(now, 120);
 
   for (const proposedTime of proposal.proposedTimes) {
-    const timeRef = (proposedTime.datetime || proposedTime.dayOfWeek || "").toLowerCase();
+    if (!proposedTime.datetime) continue;
 
-    if (timeRef) {
-      if (timeRef.includes("next week")) {
-        const daysUntilNextMonday = ((8 - now.getDay()) % 7) || 7;
-        const nextMonday = startOfDay(addDays(now, daysUntilNextMonday));
-        searchStart = new Date(nextMonday.getTime() + 9 * 60 * 60 * 1000);
-        break;
-      }
+    const timeRef = proposedTime.datetime.toLowerCase();
 
-      if (timeRef.includes("this week")) {
-        const daysUntilMonday = (1 - now.getDay() + 7) % 7;
-        const thisMonday = startOfDay(addDays(now, daysUntilMonday));
-        const mondayNineAm = new Date(thisMonday.getTime() + 9 * 60 * 60 * 1000);
-        searchStart = now > mondayNineAm ? addHours(now, 2) : mondayNineAm;
-        break;
-      }
-
-      if (timeRef.includes("today")) {
-        searchStart = addHours(now, 2);
-        break;
-      }
-
-      if (timeRef.includes("tomorrow")) {
-        searchStart = startOfDay(addDays(now, 1));
-        searchStart = new Date(searchStart.getTime() + 9 * 60 * 60 * 1000);
-        break;
-      }
+    if (timeRef.includes("next week")) {
+      const daysUntilNextMonday = ((8 - now.getDay()) % 7) || 7;
+      const nextMonday = startOfDay(addDays(now, daysUntilNextMonday));
+      searchStart = new Date(nextMonday.getTime() + 9 * 60 * 60 * 1000);
+      break;
     }
 
-    if (proposedTime.type === "specific_datetime" && proposedTime.datetime) {
+    if (timeRef.includes("this week")) {
+      const daysUntilMonday = (1 - now.getDay() + 7) % 7;
+      const thisMonday = startOfDay(addDays(now, daysUntilMonday));
+      const mondayNineAm = new Date(thisMonday.getTime() + 9 * 60 * 60 * 1000);
+      searchStart = now > mondayNineAm ? addHours(now, 2) : mondayNineAm;
+      break;
+    }
+
+    if (timeRef.includes("today")) {
+      searchStart = addHours(now, 2);
+      break;
+    }
+
+    if (timeRef.includes("tomorrow")) {
+      searchStart = startOfDay(addDays(now, 1));
+      searchStart = new Date(searchStart.getTime() + 9 * 60 * 60 * 1000);
+      break;
+    }
+
+    if (proposedTime.type === "specific_datetime") {
       try {
         const parsedDate = parseISO(proposedTime.datetime);
         if (isValid(parsedDate)) {
