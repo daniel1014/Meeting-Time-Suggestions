@@ -325,20 +325,44 @@ export const suggestTimes = async ({
   meetingProposalEmailMessage,
   calendarEvents,
   userEmail,
+  debug = false,
 }: {
   meetingProposalEmailMessage: EmailMessage;
   calendarEvents: CalendarEvent[];
   userEmail: string;
-}): Promise<TimeInterval[]> => {
+  debug?: boolean;
+}): Promise<
+  | TimeInterval[]
+  | {
+      proposalExtractedFromLLM: MeetingProposal;
+      duration: number;
+      searchRange: { start: Date; end: Date };
+      busyIntervals: TimeInterval[];
+      freeSlots: TimeInterval[];
+      selectedSlots: TimeInterval[];
+    }
+> => {
   try {
-    const proposal = await extractMeetingProposal(meetingProposalEmailMessage);
+    const proposalExtractedFromLLM = await extractMeetingProposal(meetingProposalEmailMessage);
 
-    const duration = inferDuration(proposal);
-    const { start, end } = determineSearchRange(proposal);
+    const duration = inferDuration(proposalExtractedFromLLM);
+    const searchRange = determineSearchRange(proposalExtractedFromLLM);
+    const { start, end } = searchRange;
 
     const busyIntervals = getBusyIntervals(calendarEvents, userEmail, start, end);
     const freeSlots = findFreeSlots(busyIntervals, duration, start, end);
-    const selectedSlots = scoreAndSelectSlots(freeSlots, proposal, 3);
+    const selectedSlots = scoreAndSelectSlots(freeSlots, proposalExtractedFromLLM, 3);
+
+    if (debug) {
+      return {
+        proposalExtractedFromLLM,
+        duration,
+        searchRange,
+        busyIntervals,
+        freeSlots,
+        selectedSlots,
+      };
+    }
 
     return selectedSlots;
   } catch (error) {
@@ -347,35 +371,39 @@ export const suggestTimes = async ({
   }
 };
 
+// Example usage
+const exampleEmailMessage: EmailMessage = {
+  threadId: "AAMkAGI2TAAA=",
+  isFirstInThread: true,
+  providerEmailId: "AAMkAGI2TAAA=",
+  to: [{ address: "matt.ffrench@fyxer.com", name: "Matt Ffrench" }],
+  from: { address: "john@doe.com", name: "John Doe" },
+  cc: [],
+  bcc: [],
+  content: "",
+  fullBody: "Can you do our board meeting next week one afternoon?",
+  isDraft: false,
+  isSpam: false,
+  messageId: "<>",
+  forwardedContent: undefined,
+  hasDoctypeHtml: false,
+  subject: "Meeting Proposal",
+  sentAt: new Date(),
+  attachmentData: [],
+  hasUnsubscribeLink: false,
+  headers: [],
+  folderIds: [],
+  categoryIds: [],
+  isRead: false,
+  toEmailAddresses: ["matt.ffrench@fyxer.com"],
+  ccEmailAddresses: [],
+};
+
 suggestTimes({
-  meetingProposalEmailMessage: {
-    threadId: "AAMkAGI2TAAA=",
-    isFirstInThread: true,
-    providerEmailId: "AAMkAGI2TAAA=",
-    to: [{ address: "matt.ffrench@fyxer.com", name: "Matt Ffrench" }],
-    from: { address: "john@doe.com", name: "John Doe" },
-    cc: [],
-    bcc: [],
-    content: "",
-    fullBody: "Can you do our board meeting next week one afternoon?",
-    isDraft: false,
-    isSpam: false,
-    messageId: "<>",
-    forwardedContent: undefined,
-    hasDoctypeHtml: false,
-    subject: "Meeting Proposal",
-    sentAt: new Date(),
-    attachmentData: [],
-    hasUnsubscribeLink: false,
-    headers: [],
-    folderIds: [],
-    categoryIds: [],
-    isRead: false,
-    toEmailAddresses: ["matt.ffrench@fyxer.com"],
-    ccEmailAddresses: [],
-  },
+  meetingProposalEmailMessage: exampleEmailMessage,
   calendarEvents,
   userEmail: USER_EMAIL,
+  debug: true,
 }).then((slots) => {
-  console.log("suggested slots", slots);
+  console.log("suggested slots", JSON.stringify(slots, null, 2));
 });
