@@ -16,8 +16,9 @@ import {
   differenceInDays,
   differenceInHours,
   format,
-  isWithinInterval,
   areIntervalsOverlapping,
+  isValid,
+  addHours,
 } from "date-fns";
 
 const USER_EMAIL = "matt.ffrench@fyxer.com";
@@ -28,17 +29,25 @@ const extractMeetingProposal = async (
   const systemPrompt = `Extract meeting scheduling information from emails.
 
 Rules:
-1. Categorize proposed times as:
-   - specific_datetime: exact date and time (e.g., "Wednesday at 4pm")
-   - day_time_range: day with time range (e.g., "Wed afternoon", "Friday 9am-1pm")
-   - day_only: just a day (e.g., "next week", "Monday")
-   - vague: unclear (e.g., "sometime soon", "when you're free")
+1. Categorize proposed times and store in appropriate fields:
+   - specific_datetime: exact date and time
+     → Example: "Wednesday at 4pm" → datetime: "Wednesday at 4pm", dayOfWeek: "Wednesday"
+   - day_time_range: day with time range
+     → Example: "Wed afternoon" → datetime: "Wednesday afternoon", dayOfWeek: "Wednesday"
+   - day_only: relative date references or single day names
+     → Example: "next week" → datetime: "next week", dayOfWeek: null
+     → Example: "Monday" → datetime: "Monday", dayOfWeek: "Monday"
+   - vague: unclear timing
+     → Example: "sometime soon" → datetime: "soon", type: "vague"
+
+   CRITICAL: Always put the natural language date reference in the 'datetime' field first!
+   Use 'dayOfWeek' ONLY for specific day names like "Monday", "Tuesday", etc.
 
 2. Extract timezone from explicit mentions (PST, EST) or location hints ("based in San Francisco")
 
 3. Duration inference:
    - explicit: clearly stated (e.g., "30 minutes", "an hour")
-   - inferred: guess from meeting type (e.g., "quick catchup" → 30min)
+   - inferred: guess from meeting type (e.g., "quick catchup" → 30min, "board meeting" → 60min)
    - unknown: no clues
 
 4. Detect constraints: "afternoon" → mustBeAfternoon, "morning" → mustBeMorning
@@ -307,7 +316,49 @@ const inferDuration = (proposal: MeetingProposal): number => {
 
 const determineSearchRange = (proposal: MeetingProposal): { start: Date; end: Date } => {
   const now = new Date();
-  const searchStart = addMinutes(now, 120);
+  let searchStart = addMinutes(now, 120);
+
+  for (const proposedTime of proposal.proposedTimes) {
+    const timeRef = (proposedTime.datetime || proposedTime.dayOfWeek || "").toLowerCase();
+
+    if (timeRef) {
+      if (timeRef.includes("next week")) {
+        const daysUntilNextMonday = ((8 - now.getDay()) % 7) || 7;
+        const nextMonday = startOfDay(addDays(now, daysUntilNextMonday));
+        searchStart = new Date(nextMonday.getTime() + 9 * 60 * 60 * 1000);
+        break;
+      }
+
+      if (timeRef.includes("this week")) {
+        const daysUntilMonday = (1 - now.getDay() + 7) % 7;
+        const thisMonday = startOfDay(addDays(now, daysUntilMonday));
+        const mondayNineAm = new Date(thisMonday.getTime() + 9 * 60 * 60 * 1000);
+        searchStart = now > mondayNineAm ? addHours(now, 2) : mondayNineAm;
+        break;
+      }
+
+      if (timeRef.includes("today")) {
+        searchStart = addHours(now, 2);
+        break;
+      }
+
+      if (timeRef.includes("tomorrow")) {
+        searchStart = startOfDay(addDays(now, 1));
+        searchStart = new Date(searchStart.getTime() + 9 * 60 * 60 * 1000);
+        break;
+      }
+    }
+
+    if (proposedTime.type === "specific_datetime" && proposedTime.datetime) {
+      try {
+        const parsedDate = parseISO(proposedTime.datetime);
+        if (isValid(parsedDate)) {
+          searchStart = parsedDate;
+          break;
+        }
+      } catch {}
+    }
+  }
 
   let daysAhead = 14;
   if (proposal.urgency === "immediate") {
