@@ -1,53 +1,25 @@
-import { calendarEvents } from "./calendarEvents";
 import { EmailMessage } from "./types/EmailMessage";
-import { getTimeIntervalsUserIsBusy } from "./triggers/onNewEmailMessage/getTimeIntervalsUserIsBusy";
-import { isEmailMessageContainingMeetingProposal, suggestMeetingSlotsForMeetingProposal, suggestMeetingSlotsForMeetingProposalDeterministic } from "./triggers/onNewEmailMessage/suggestMeetingSlots";
+import { TimeInterval } from "./types/TimeInterval";
+import { CalendarEvent } from "./types/CalendarEvent";
+import { calendarEvents } from "./calendarEvents";
+import { openai } from "./clients/openai";
 
-// consts
 const USER_EMAIL = "matt.ffrench@fyxer.com";
-const usersCalendarEvents = calendarEvents.map((event) => ({...event, userEmail: USER_EMAIL}));
 
-// Q-PRE
-export const mainPre = () => {
-  return getTimeIntervalsUserIsBusy(usersCalendarEvents, USER_EMAIL);
-}
-
-// Q-MAIN-1
-export const main1 = async ({
-  usersEmailMessage,
-  useDeterministic = false,
+export const suggestTimes = async ({
+  meetingProposalEmailMessage,
+  calendarEvents,
+  userEmail,
 }: {
-  usersEmailMessage: EmailMessage;
-  useDeterministic?: boolean;
-}) => {
-  // See functions in ./triggers/onNewEmailMessage/suggestMeetingSlots.ts
-
-  const isMeetingProposal = await isEmailMessageContainingMeetingProposal(usersEmailMessage);
-
-  if (!isMeetingProposal) {
-    return [];
-  }
-
-  if (useDeterministic) {
-    return await suggestMeetingSlotsForMeetingProposalDeterministic({
-      emailMessage: usersEmailMessage,
-      userCalendarEvents: usersCalendarEvents,
-    });
-  }
-  const suggestedMeetingSlots = await suggestMeetingSlotsForMeetingProposal({
-    emailMessage: usersEmailMessage,
-    userCalendarEvents: usersCalendarEvents,
-  });
-
-  return suggestedMeetingSlots;
+  meetingProposalEmailMessage: EmailMessage;
+  calendarEvents: CalendarEvent[];
+  userEmail: string;
+}): Promise<TimeInterval[]> => {
+  return [];
 };
 
-// testing, assuming this is how they'll be called
-console.log("mainPre", mainPre());
-
-main1({
-  useDeterministic: true,
-  usersEmailMessage: {
+suggestTimes({
+  meetingProposalEmailMessage: {
     threadId: "AAMkAGI2TAAA=",
     isFirstInThread: true,
     providerEmailId: "AAMkAGI2TAAA=",
@@ -72,9 +44,9 @@ main1({
     isRead: false,
     toEmailAddresses: ["matt.ffrench@fyxer.com"],
     ccEmailAddresses: [],
-  }
+  },
+  calendarEvents,
+  userEmail: USER_EMAIL,
 }).then((slots) => {
   console.log("suggested slots", slots);
 });
-
-

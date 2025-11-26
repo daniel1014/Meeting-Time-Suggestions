@@ -25,8 +25,3 @@ export type CalendarEvent = {
   title: string;
 };
 
-export type TimeInterval = {
-  // UTC
-  startsAt: Date;
-  endsAt: Date;
-};
