@@ -20,6 +20,9 @@ import {
   isValid,
   addHours,
 } from "date-fns";
+import { fromZonedTime, toZonedTime } from "date-fns-tz";
+import { UserPreferences } from "./types/UserPreferences";
+import { defaultUserPreferences } from "./userSettings";
 
 const USER_EMAIL = "matt.ffrench@fyxer.com";
 
@@ -81,10 +84,12 @@ const getBusyIntervals = (
   events: CalendarEvent[],
   userEmail: string,
   start: Date,
-  end: Date
+  end: Date,
+  bufferMinutes: number,
+  allowBackToBack: boolean
 ): TimeInterval[] => {
   const busyIntervals: TimeInterval[] = [];
-  const bufferMinutes = 15;
+  const effectiveBuffer = allowBackToBack ? 0 : bufferMinutes;
 
   for (const event of events) {
     const eventStart = new Date(event.startsAt);
@@ -114,8 +119,8 @@ const getBusyIntervals = (
 
     if (isBusy) {
       busyIntervals.push({
-        startsAt: subMinutes(eventStart, bufferMinutes),
-        endsAt: addMinutes(eventEnd, bufferMinutes),
+        startsAt: subMinutes(eventStart, effectiveBuffer),
+        endsAt: addMinutes(eventEnd, effectiveBuffer),
       });
     }
   }
@@ -150,11 +155,10 @@ const findFreeSlots = (
   busyIntervals: TimeInterval[],
   duration: number,
   start: Date,
-  end: Date
+  end: Date,
+  userPreferences: UserPreferences
 ): TimeInterval[] => {
   const freeSlots: TimeInterval[] = [];
-  const workingHoursStart = 9;
-  const workingHoursEnd = 17;
   const slotIncrementMinutes = 15;
 
   const merged = mergeOverlappingIntervals(busyIntervals);
@@ -162,22 +166,31 @@ const findFreeSlots = (
   let currentTime = new Date(start);
 
   for (let day = new Date(start); day < end; day = addDays(day, 1)) {
-    const dayOfWeek = day.getUTCDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+    const dayInZone = toZonedTime(day, userPreferences.timezone);
+    const dayOfWeek = dayInZone.getDay(); // 0-6
 
-    const dayStart = new Date(
-      Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), workingHoursStart)
-    );
-    const dayEnd = new Date(
-      Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), workingHoursEnd)
-    );
+    // Adjust 0 (Sunday) to 7 if needed, or just match user's convention.
+    // User's example: workDays: [1, 2, 3, 4, 5] (Mon-Fri).
+    // JS getDay(): 0=Sun, 1=Mon...
+    // So we check if dayOfWeek is in workDays.
+    if (!userPreferences.workDays.includes(dayOfWeek)) continue;
 
-    currentTime = dayStart;
+    const dayStr = format(dayInZone, 'yyyy-MM-dd');
+    const workStartISO = `${dayStr}T${userPreferences.workHoursStart}:00`;
+    const workEndISO = `${dayStr}T${userPreferences.workHoursEnd}:00`;
 
-    while (currentTime < dayEnd) {
+    const workStartUTC = fromZonedTime(workStartISO, userPreferences.timezone);
+    const workEndUTC = fromZonedTime(workEndISO, userPreferences.timezone);
+
+    // Ensure we don't start before the search start time
+    currentTime = workStartUTC < start ? start : workStartUTC;
+
+    // Align to 15 min grid if needed, but let's just start from currentTime
+
+    while (currentTime < workEndUTC) {
       const slotEnd = addMinutes(currentTime, duration);
 
-      if (slotEnd > dayEnd) break;
+      if (slotEnd > workEndUTC) break;
 
       const isOverlapping = merged.some((busy) =>
         areIntervalsOverlapping(
@@ -270,7 +283,7 @@ const scoreSlot = (slot: TimeInterval, proposal: MeetingProposal): number => {
         const proposedDate = parseISO(proposedTime.datetime);
         const hoursDiff = Math.abs(differenceInHours(slot.startsAt, proposedDate));
         if (hoursDiff <= 2) score += 50;
-      } catch {}
+      } catch { }
     }
     if (proposedTime.dayOfWeek) {
       const slotDayName = format(slot.startsAt, "EEEE");
@@ -291,7 +304,7 @@ const scoreSlot = (slot: TimeInterval, proposal: MeetingProposal): number => {
   return score;
 };
 
-const inferDuration = (proposal: MeetingProposal): number => {
+const inferDuration = (proposal: MeetingProposal, defaultDuration: number): number => {
   if (proposal.duration.confidence === "explicit" && proposal.duration.minutes) {
     return proposal.duration.minutes;
   }
@@ -311,7 +324,7 @@ const inferDuration = (proposal: MeetingProposal): number => {
     return 30;
   }
 
-  return 30;
+  return defaultDuration;
 };
 
 const determineSearchRange = (proposal: MeetingProposal): { start: Date; end: Date } => {
@@ -356,7 +369,7 @@ const determineSearchRange = (proposal: MeetingProposal): { start: Date; end: Da
           searchStart = parsedDate;
           break;
         }
-      } catch {}
+      } catch { }
     }
   }
 
@@ -376,32 +389,41 @@ export const suggestTimes = async ({
   meetingProposalEmailMessage,
   calendarEvents,
   userEmail,
+  userPreferences = defaultUserPreferences,
   debug = false,
 }: {
   meetingProposalEmailMessage: EmailMessage;
   calendarEvents: CalendarEvent[];
   userEmail: string;
+  userPreferences?: UserPreferences;
   debug?: boolean;
 }): Promise<
   | TimeInterval[]
   | {
-      proposalExtractedFromLLM: MeetingProposal;
-      duration: number;
-      searchRange: { start: Date; end: Date };
-      busyIntervals: TimeInterval[];
-      freeSlots: TimeInterval[];
-      selectedSlots: TimeInterval[];
-    }
+    proposalExtractedFromLLM: MeetingProposal;
+    duration: number;
+    searchRange: { start: Date; end: Date };
+    busyIntervals: TimeInterval[];
+    freeSlots: TimeInterval[];
+    selectedSlots: TimeInterval[];
+  }
 > => {
   try {
     const proposalExtractedFromLLM = await extractMeetingProposal(meetingProposalEmailMessage);
 
-    const duration = inferDuration(proposalExtractedFromLLM);
+    const duration = inferDuration(proposalExtractedFromLLM, userPreferences.defaultDurationMinutes);
     const searchRange = determineSearchRange(proposalExtractedFromLLM);
     const { start, end } = searchRange;
 
-    const busyIntervals = getBusyIntervals(calendarEvents, userEmail, start, end);
-    const freeSlots = findFreeSlots(busyIntervals, duration, start, end);
+    const busyIntervals = getBusyIntervals(
+      calendarEvents,
+      userEmail,
+      start,
+      end,
+      userPreferences.bufferMinutes,
+      userPreferences.allowBackToBack
+    );
+    const freeSlots = findFreeSlots(busyIntervals, duration, start, end, userPreferences);
     const selectedSlots = scoreAndSelectSlots(freeSlots, proposalExtractedFromLLM, 3);
 
     if (debug) {
@@ -454,7 +476,8 @@ suggestTimes({
   meetingProposalEmailMessage: exampleEmailMessage,
   calendarEvents,
   userEmail: USER_EMAIL,
-  debug: true,
+  userPreferences: defaultUserPreferences,
+  debug: false,
 }).then((slots) => {
   console.log("suggested slots", JSON.stringify(slots, null, 2));
 });
