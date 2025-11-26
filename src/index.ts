@@ -20,7 +20,6 @@ import {
   isValid,
   addHours,
 } from "date-fns";
-import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import { UserPreferences } from "./types/UserPreferences";
 import { defaultUserPreferences } from "./userSettings";
 
@@ -163,34 +162,32 @@ const findFreeSlots = (
 
   const merged = mergeOverlappingIntervals(busyIntervals);
 
-  let currentTime = new Date(start);
+  // Parse working hours as UTC hours
+  const [startHour, startMin] = userPreferences.workHoursStart.split(':').map(Number);
+  const [endHour, endMin] = userPreferences.workHoursEnd.split(':').map(Number);
 
+  // Iterate through each day in the search range
   for (let day = new Date(start); day < end; day = addDays(day, 1)) {
-    const dayInZone = toZonedTime(day, userPreferences.timezone);
-    const dayOfWeek = dayInZone.getDay(); // 0-6
+    const dayOfWeek = day.getUTCDay();
 
-    // Adjust 0 (Sunday) to 7 if needed, or just match user's convention.
-    // User's example: workDays: [1, 2, 3, 4, 5] (Mon-Fri).
-    // JS getDay(): 0=Sun, 1=Mon...
-    // So we check if dayOfWeek is in workDays.
+    // Check if this day is a working day (0=Sun, 1=Mon, ...)
     if (!userPreferences.workDays.includes(dayOfWeek)) continue;
 
-    const dayStr = format(dayInZone, 'yyyy-MM-dd');
-    const workStartISO = `${dayStr}T${userPreferences.workHoursStart}:00`;
-    const workEndISO = `${dayStr}T${userPreferences.workHoursEnd}:00`;
+    // Create working hours for this day in UTC
+    const dayStart = new Date(
+      Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), startHour, startMin)
+    );
+    const dayEnd = new Date(
+      Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), endHour, endMin)
+    );
 
-    const workStartUTC = fromZonedTime(workStartISO, userPreferences.timezone);
-    const workEndUTC = fromZonedTime(workEndISO, userPreferences.timezone);
+    // Start from either the beginning of working hours or the search start time, whichever is later
+    let currentTime = dayStart < start ? start : dayStart;
 
-    // Ensure we don't start before the search start time
-    currentTime = workStartUTC < start ? start : workStartUTC;
-
-    // Align to 15 min grid if needed, but let's just start from currentTime
-
-    while (currentTime < workEndUTC) {
+    while (currentTime < dayEnd && currentTime < end) {
       const slotEnd = addMinutes(currentTime, duration);
 
-      if (slotEnd > workEndUTC) break;
+      if (slotEnd > dayEnd || slotEnd > end) break;
 
       const isOverlapping = merged.some((busy) =>
         areIntervalsOverlapping(
